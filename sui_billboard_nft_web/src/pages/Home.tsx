@@ -31,7 +31,7 @@ const HomePage: React.FC = () => {
       <div className="hero-section">
         <TechAnimation />
         <div className="hero-badge">基于 SUI 区块链</div>
-        <Title>Sui 广告位 NFT 平台</Title>
+        <Title>链上动态NFT广告牌发布系统</Title>
         <Paragraph className="subtitle">
           革命性的去中心化广告解决方案：将您的广告内容永久铸造到区块链上，
           实现透明、安全、可验证的链上广告展示与交易
@@ -182,7 +182,7 @@ const HomePage: React.FC = () => {
       
       <div className="cta-section">
         <Title level={2}>准备好开始您的区块链广告之旅了吗？</Title>
-        <Paragraph>立即加入 Sui 广告位 NFT 平台，体验区块链赋能的全新广告方式</Paragraph>
+        <Paragraph>立即加入 链上动态NFT广告牌发布系统，体验区块链赋能的全新广告方式</Paragraph>
         <Link to="/ad-spaces">
           <Button type="primary" size="large" icon={<ShoppingOutlined />}>
             立即开始浏览
