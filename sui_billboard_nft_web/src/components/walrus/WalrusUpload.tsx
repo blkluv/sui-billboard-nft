@@ -6,6 +6,7 @@ import { walrusService, CustomSigner } from '../../utils/walrus';
 import './WalrusUpload.scss';
 import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { useCurrentAccount } from '@mysten/dapp-kit';
+import { Transaction } from '@mysten/sui/transactions';
 
 const { Dragger } = Upload;
 
@@ -29,6 +30,24 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
+  // 从环境变量获取当前网络
+  const networkConfig = process.env.REACT_APP_DEFAULT_NETWORK || 'testnet';
+  
+  // 使用明确的类型赋值
+  let chainId: `${string}:${string}`;
+  if (networkConfig === 'testnet') {
+    chainId = 'sui:testnet';
+  } else if (networkConfig === 'mainnet') {
+    chainId = 'sui:mainnet';
+  } else if (networkConfig === 'devnet') {
+    chainId = 'sui:devnet';
+  } else {
+    // 默认使用testnet
+    chainId = 'sui:testnet';
+  }
+  
+  console.log(`使用网络配置: ${chainId}`);
+
   // 创建符合CustomSigner接口的对象
   const createSigner = (): CustomSigner => {
     if (!account?.address) {
@@ -46,32 +65,101 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
           tx.setSender(account.address);
         }
         
-        // 使用 Promise 包装 signAndExecute 调用，确保它返回结果
-        const response = await new Promise((resolve, reject) => {
-          signAndExecute(
-            {
-              transaction: tx,
-              chain: 'sui:testnet',
-              account: account
-            },
-            {
-              onSuccess: (data) => {
-                console.log('交易签名成功:', data);
-                resolve(data);
-              },
-              onError: (error) => {
-                console.error('交易签名失败:', error);
-                reject(error);
-              }
+        // 特殊处理Uint8Array类型的交易数据
+        if (tx instanceof Uint8Array) {
+          console.log('检测到交易对象是Uint8Array类型，尝试转换为Transaction对象');
+          
+          try {
+            // 使用Transaction.from将二进制数据转换为Transaction对象
+            const transactionBlock = Transaction.from(tx);
+            console.log('成功将Uint8Array转换为Transaction对象', transactionBlock);
+            
+            // 确保设置发送者
+            if ('setSender' in transactionBlock && typeof transactionBlock.setSender === 'function') {
+              transactionBlock.setSender(account.address);
             }
-          );
-        });
-        
-        if (!response) {
-          throw new Error('交易签名未返回结果');
+            
+            const response = await new Promise((resolve, reject) => {
+              signAndExecute(
+                {
+                  transaction: transactionBlock,
+                  chain: chainId,
+                  account: account
+                },
+                {
+                  onSuccess: (data) => {
+                    console.log('交易签名成功:', data);
+                    resolve(data);
+                  },
+                  onError: (error) => {
+                    console.error('交易签名失败:', error);
+                    reject(error);
+                  }
+                }
+              );
+            });
+            
+            if (!response) {
+              throw new Error('交易签名未返回结果');
+            }
+            
+            return response;
+          } catch (err: any) {
+            console.error('无法处理Uint8Array类型的交易:', err);
+            throw new Error(`无法处理Uint8Array类型的交易: ${err.message || '未知错误'}`);
+          }
         }
         
-        return response;
+        // 将交易对象转换为兼容格式
+        let transactionToSign = tx;
+        
+        // 确保交易对象具有toJSON方法
+        if (tx && typeof tx === 'object' && !('toJSON' in tx)) {
+          console.log('为交易对象添加toJSON方法');
+          
+          // 创建一个包装对象，提供所需的方法
+          transactionToSign = {
+            ...tx,
+            toJSON: function() {
+              if (this.serialize && typeof this.serialize === 'function') {
+                return this.serialize();
+              }
+              return this;
+            }
+          };
+        }
+        
+        // 使用 Promise 包装 signAndExecute 调用，确保它返回结果
+        try {
+          const response = await new Promise((resolve, reject) => {
+            signAndExecute(
+              {
+                transaction: transactionToSign,
+                chain: chainId,
+                account: account
+              },
+              {
+                onSuccess: (data) => {
+                  console.log('交易签名成功:', data);
+                  resolve(data);
+                },
+                onError: (error) => {
+                  console.error('交易签名失败:', error);
+                  reject(error);
+                }
+              }
+            );
+          });
+          
+          if (!response) {
+            throw new Error('交易签名未返回结果');
+          }
+          
+          return response;
+        } catch (err) {
+          console.error('交易签名最终失败:', err);
+          throw err;
+        }
       },
       
       // 获取 Sui 地址
