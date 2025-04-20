@@ -1,18 +1,16 @@
-/**
- * 更新环境变量配置，添加Walrus URL相关配置
- * 
- * 需在.env文件中添加如下配置:
- * REACT_APP_WALRUS_ENVIRONMENT=testnet|mainnet
- * REACT_APP_WALRUS_AGGREGATOR_URL_TESTNET=https://aggregator.walrus-testnet.walrus.space/v1/blobs/by-object-id/
- * REACT_APP_WALRUS_AGGREGATOR_URL_MAINNET=https://walrus.globalstake.io/v1/blobs/by-object-id/
- */
-
 import { WalrusClient } from '@mysten/walrus';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import type { WriteBlobOptions } from '@mysten/walrus';
+import type { Signer } from '@mysten/sui/cryptography';
 
-
-export type SignFunction = (tx: any) => Promise<any>;
+/**
+ * 自定义签名器接口，兼容性更强
+ */
+export interface CustomSigner {
+  signTransaction?: (tx: any) => Promise<any>;
+  toSuiAddress: () => string;
+  address?: string;
+}
 
 /**
  * Walrus服务类：负责与Walrus存储交互
@@ -104,14 +102,14 @@ export class WalrusService {
    * @param file 要上传的文件
    * @param duration 存储时长(秒)
    * @param address 钱包地址
-   * @param signAndExecute 签名并执行交易的函数
+   * @param signer 签名对象
    * @returns Promise<{blobId: string, url: string}>
    */
   async uploadFile(
     file: File, 
     duration: number, 
     address: string,
-    signAndExecute: SignFunction
+    signer: Signer | CustomSigner
   ): Promise<{ blobId: string, url: string }> {
     try {
       console.log(`正在上传文件到Walrus: ${file.name}, 大小: ${file.size} 字节`);
@@ -125,223 +123,87 @@ export class WalrusService {
       console.log(`文件将存储 ${epochs} 个epochs（约${epochs}天）`);
       
       try {
-        // 创建存储对象
-        let tx = await this.client.createStorageTransaction({
-          size: uint8Array.length,
+        console.log('开始写入blob数据至Walrus存储网络...');
+        
+        /**
+         * WriteBlobOptions类型定义参照:
+         * https://sdk.mystenlabs.com/typedoc/types/_mysten_walrus.WriteBlobOptions.html
+         */
+        const writeBlobOptions: WriteBlobOptions = {
+          blob: uint8Array,
+          deletable: true,
           epochs: epochs,
-          owner: address
-        });
-        
-        // 检查钱包连接并执行存储创建交易
-        try {
-          // 确保交易对象正确格式化，以便钱包能够识别
-          if (!tx) {
-            throw new Error('创建存储交易失败：交易对象为空');
-          }
-          
-          // 确保交易对象包含发送者信息
-          if (typeof tx === 'object') {
-            // 如果是 TransactionBlock 对象，需要设置 sender
-            if ('setSender' in tx && typeof tx.setSender === 'function') {
-              console.log('设置交易发送者为:', address);
-              tx.setSender(address);
-            }
-            
-            // 如果是普通对象，添加 sender 属性
-            if (!('sender' in tx)) {
-              console.log('添加发送者属性:', address);
-              (tx as any).sender = address;
-            }
-          }
-          
-          // 打印交易对象的类型和内容，帮助调试
-          console.log('准备签名存储创建交易, 交易类型:', typeof tx);
-          
-          // 等待签名结果
-          console.log('调用钱包签名函数...');
-          const storageResult = await signAndExecute(tx);
-          
-          // 验证签名结果
-          console.log('签名函数返回结果类型:', typeof storageResult, '内容:', storageResult);
-          
-          if (!storageResult) {
-            throw new Error('存储创建交易失败：钱包未返回交易结果');
-          }
-          
-          console.log('存储创建交易成功:', storageResult);
-        } catch (err) {
-          console.error('存储创建交易错误:', err);
-          const errorMessage = err instanceof Error ? err.message : '未知错误';
-          throw new Error('存储创建交易失败: ' + errorMessage);
-        }
-        
-        // 上传文件 - 调整signer接口以匹配最新API
-        console.log('准备上传文件内容到Walrus...');
-        
-        // 创建符合 Walrus 要求的 signer 对象
-        const walrusSigner = {
-          // 提供签名交易块的方法
-          signTransactionBlock: async (txb: any) => {
-            console.log('准备签名文件上传交易，交易类型:', typeof txb);
-            try {
-              // 确保交易对象有效
-              if (!txb) {
-                throw new Error('文件上传交易对象为空');
-              }
-              
-              // 确保交易对象包含发送者信息
-              if (typeof txb === 'object') {
-                // 如果是 TransactionBlock 对象，需要设置 sender
-                if ('setSender' in txb && typeof txb.setSender === 'function') {
-                  console.log('设置文件上传交易发送者为:', address);
-                  txb.setSender(address);
-                }
-                
-                // 如果是普通对象，添加 sender 属性
-                if (!('sender' in txb)) {
-                  console.log('添加文件上传交易发送者属性:', address);
-                  (txb as any).sender = address;
-                }
-              }
-              
-              // 调用签名函数并等待结果
-              const result = await signAndExecute(txb);
-              console.log('文件上传交易签名成功:', result);
-              return result;
-            } catch (error) {
-              console.error('文件上传交易签名失败:', error);
-              throw error;
-            }
+          signer: signer as any, // 使用类型断言解决类型兼容性问题
+          attributes: {
+            filename: file.name,
+            contentType: file.type,
+            size: file.size.toString(),
+            lastModified: new Date(file.lastModified).toISOString(),
+            uploadTime: new Date().toISOString(),
+            origin: window.location.origin || 'unknown'
           },
-          
-          // 添加 toSuiAddress 方法，返回钱包地址
-          toSuiAddress: () => {
-            console.log('调用 toSuiAddress 方法，返回地址:', address);
-            return address;
-          },
-          
-          // 添加地址属性
-          address: address
+          // 使用signer的地址作为owner
+          owner: signer.toSuiAddress()
         };
         
-        try {
-          console.log('开始写入blob数据至Walrus存储网络...');
-          
-          /**
-           * WriteBlobOptions类型定义参照:
-           * https://sdk.mystenlabs.com/typedoc/types/_mysten_walrus.WriteBlobOptions.html
-           */
-          const writeBlobOptions: WriteBlobOptions = {
-            blob: uint8Array,
-            deletable: true,
-            epochs: epochs,
-            signer: walrusSigner as any,
-            attributes: {
-              filename: file.name,
-              contentType: file.type,
-              size: file.size.toString(),
-              lastModified: new Date(file.lastModified).toISOString(),
-              uploadTime: new Date().toISOString(),
-              origin: window.location.origin || 'unknown'
-            },
-            // 可选参数: 如果需要指定owner，可以在这里设置
-            // owner: address
-          };
-          
-          console.log('正在执行blob上传，参数:', JSON.stringify({
-            fileSize: file.size,
-            fileType: file.type,
-            epochs: epochs,
-            attributes: writeBlobOptions.attributes
-          }));
-          
-          const result = await this.client.writeBlob(writeBlobOptions);
+        console.log('正在执行blob上传，参数:', JSON.stringify({
+          fileSize: file.size,
+          fileType: file.type,
+          epochs: epochs,
+          owner: signer.toSuiAddress(),
+          attributes: writeBlobOptions.attributes
+        }));
+        
+        const result = await this.client.writeBlob(writeBlobOptions);
 
-          if (!result || !result.blobId) {
-            throw new Error('文件上传失败：未获取到有效的blob信息');
-          }
-          
-          const { blobId, blobObject } = result;
-          
-          console.log(`文件上传成功, Blob ID: ${blobId}`, blobObject ? `对象ID: ${blobObject.id?.id}` : '');
-          
-          // 获取blob URL
-          let url = '';
-          try {
-            const objectId = blobObject?.id?.id;
-            // 使用改进的getBlobUrl方法，优先使用objectId
-            if (objectId) {
-              url = await this.getBlobUrl(objectId);
-              console.log(`成功获取Blob URL: ${url}`);
-            } else {
-              throw new Error('未获取到有效的对象ID');
-            }
-          } catch (e) {
-            console.warn('无法通过对象ID获取blob URL:', e);
-            // 备用URL构造方式
-            const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
-            url = `https://${network}.walrus.app/blob/${blobId}`;
-            console.log(`使用备用URL: ${url}`);
-          }
-          
-          if (!url) {
-            throw new Error('无法生成有效的Blob URL');
-          }
-          
-          return { blobId, url };
-        } catch (uploadError) {
-          console.error('Walrus blob上传错误:', uploadError);
-          const errorMessage = uploadError instanceof Error ? uploadError.message : '未知错误';
-          throw new Error(`Blob上传失败: ${errorMessage}`);
+        if (!result || !result.blobId) {
+          throw new Error('文件上传失败：未获取到有效的blob信息');
         }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'RetryableWalrusClientError') {
-          console.log('遇到可重试错误，重置客户端后重试...');
-          (this.client as any).reset();
-          // 重新尝试上传
-          return this.uploadFile(file, duration, address, signAndExecute);
+        
+        const { blobId, blobObject } = result;
+        
+        console.log(`文件上传成功, Blob ID: ${blobId}`, blobObject ? `对象ID: ${blobObject.id?.id}` : '');
+        
+        // 获取blob URL
+        let url = '';
+        try {
+          const objectId = blobObject?.id?.id;
+          // 使用改进的getBlobUrl方法，优先使用objectId
+          if (objectId) {
+            url = await this.getBlobUrl(objectId);
+            console.log(`成功获取Blob URL: ${url}`);
+          } else {
+            throw new Error('未获取到有效的对象ID');
+          }
+        } catch (e) {
+          console.warn('无法通过对象ID获取blob URL:', e);
+          // 备用URL构造方式
+          const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
+          url = `https://${network}.walrus.app/blob/${blobId}`;
+          console.log(`使用备用URL: ${url}`);
         }
-        throw error;
+        
+        if (!url) {
+          throw new Error('无法生成有效的Blob URL');
+        }
+        
+        return { blobId, url };
+      } catch (uploadError) {
+        console.error('Walrus blob上传错误:', uploadError);
+        const errorMessage = uploadError instanceof Error ? uploadError.message : '未知错误';
+        throw new Error(`Blob上传失败: ${errorMessage}`);
       }
-    } catch (err) {
-      console.error('Walrus上传错误:', err);
-      const errorMessage = err instanceof Error ? err.message : '未知错误';
-      throw new Error(`上传到Walrus失败: ${errorMessage}`);
-    }
-  }
-  
-  /**
-   * 读取Blob内容
-   * @param blobId Walrus中的Blob ID
-   * @returns Promise<Uint8Array>
-   */
-  async readBlob(blobId: string): Promise<Uint8Array> {
-    try {
-      return await this.client.readBlob({ blobId });
     } catch (error) {
       if (error instanceof Error && error.name === 'RetryableWalrusClientError') {
         console.log('遇到可重试错误，重置客户端后重试...');
         (this.client as any).reset();
-        return this.readBlob(blobId);
+        // 重新尝试上传
+        return this.uploadFile(file, duration, address, signer);
       }
       throw error;
     }
   }
   
-  /**
-   * 获取Blob的类型信息
-   * @param blobId Walrus中的Blob ID
-   */
-  async getBlobType(blobId: string): Promise<any> {
-    try {
-      // 传入对象参数或直接传入blobId，根据API需要调整
-      return await (this.client as any).getBlobType({ blobId });
-    } catch (e) {
-      // 如果方法不存在，返回默认值
-      console.warn('getBlobType方法可能不存在或已更改:', e);
-      return { contentType: 'application/octet-stream' };
-    }
-  }
   
   /**
    * 获取Blob的URL
@@ -364,6 +226,7 @@ export class WalrusService {
       throw new Error(`无法获取Blob URL: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
 }
 
 // 创建单例实例

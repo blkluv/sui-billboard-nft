@@ -2,11 +2,10 @@ import React, { useState } from 'react';
 import { Button, Upload, message, Radio, Spin, Form, Input, Progress, Tooltip } from 'antd';
 import { UploadOutlined, CheckCircleOutlined, InfoCircleOutlined, InboxOutlined } from '@ant-design/icons';
 import type { RcFile } from 'antd/lib/upload';
-import { walrusService } from '../../utils/walrus';
+import { walrusService, CustomSigner } from '../../utils/walrus';
 import './WalrusUpload.scss';
 import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { useCurrentAccount } from '@mysten/dapp-kit';
-import type { SignFunction } from '../../utils/walrus';
 
 const { Dragger } = Upload;
 
@@ -30,51 +29,59 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
-  const signFunction: SignFunction = async (tx) => {
+  // 创建符合CustomSigner接口的对象
+  const createSigner = (): CustomSigner => {
     if (!account?.address) {
       throw new Error('钱包未连接');
     }
     
-    try {
-      console.log('准备签名交易，交易对象:', tx);
-      
-      // 确保交易对象包含 sender 信息
-      // 如果是 TransactionBlock 对象，需要设置 sender
-      if (tx && typeof tx === 'object' && 'setSender' in tx && typeof tx.setSender === 'function') {
-        console.log('设置交易发送者为:', account.address);
-        tx.setSender(account.address);
-      }
-      
-      // 使用 Promise 包装 signAndExecute 调用，确保它返回结果
-      const response = await new Promise((resolve, reject) => {
-        signAndExecute(
-          {
-            transaction: tx,
-            chain: 'sui:testnet',
-            account: account // 显式指定账户
-          },
-          {
-            onSuccess: (data) => {
-              console.log('交易签名成功:', data);
-              resolve(data);
+    return {
+      // 签名交易方法
+      signTransaction: async (tx: any) => {
+        console.log('准备签名交易，交易对象:', tx);
+        
+        // 确保交易对象包含 sender 信息
+        if (tx && typeof tx === 'object' && 'setSender' in tx && typeof tx.setSender === 'function') {
+          console.log('设置交易发送者为:', account.address);
+          tx.setSender(account.address);
+        }
+        
+        // 使用 Promise 包装 signAndExecute 调用，确保它返回结果
+        const response = await new Promise((resolve, reject) => {
+          signAndExecute(
+            {
+              transaction: tx,
+              chain: 'sui:testnet',
+              account: account
             },
-            onError: (error) => {
-              console.error('交易签名失败:', error);
-              reject(error);
+            {
+              onSuccess: (data) => {
+                console.log('交易签名成功:', data);
+                resolve(data);
+              },
+              onError: (error) => {
+                console.error('交易签名失败:', error);
+                reject(error);
+              }
             }
-          }
-        );
-      });
+          );
+        });
+        
+        if (!response) {
+          throw new Error('交易签名未返回结果');
+        }
+        
+        return response;
+      },
       
-      if (!response) {
-        throw new Error('交易签名未返回结果');
-      }
+      // 获取 Sui 地址
+      toSuiAddress: () => {
+        return account.address;
+      },
       
-      return response;
-    } catch (e) {
-      console.error('签名失败:', e);
-      throw e;
-    }
+      // 地址属性
+      address: account.address
+    };
   };
 
   const handleUpload = async (file: RcFile) => {
@@ -86,11 +93,16 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
     setUploading(true);
     try {
       const duration = leaseDays * 24 * 60 * 60; // 转换为秒
+      
+      // 创建Signer对象
+      const signer = createSigner();
+      
+      // 使用新的接口调用uploadFile
       const result = await walrusService.uploadFile(
         file,
         duration,
         account.address,
-        signFunction
+        signer
       );
 
       message.success('文件上传成功');
