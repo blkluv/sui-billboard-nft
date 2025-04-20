@@ -1,5 +1,15 @@
+/**
+ * 更新环境变量配置，添加Walrus URL相关配置
+ * 
+ * 需在.env文件中添加如下配置:
+ * REACT_APP_WALRUS_ENVIRONMENT=testnet|mainnet
+ * REACT_APP_WALRUS_AGGREGATOR_URL_TESTNET=https://aggregator.walrus-testnet.walrus.space/v1/blobs/by-object-id/
+ * REACT_APP_WALRUS_AGGREGATOR_URL_MAINNET=https://walrus.globalstake.io/v1/blobs/by-object-id/
+ */
+
 import { WalrusClient } from '@mysten/walrus';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
+import type { WriteBlobOptions } from '@mysten/walrus';
 
 
 export type SignFunction = (tx: any) => Promise<any>;
@@ -12,11 +22,22 @@ export class WalrusService {
   private suiClient!: SuiClient;
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000; // 1秒
+  private walrusAggregatorUrl: string;
   
   constructor() {
     // 使用类型断言确保网络类型正确
     const network = (process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet') as 'testnet' | 'mainnet' | 'devnet' | 'localnet';
     console.log('初始化 Walrus 服务，网络环境:', network);
+    
+    // 根据环境获取正确的Walrus聚合器URL
+    if (network === 'mainnet') {
+      this.walrusAggregatorUrl = process.env.REACT_APP_WALRUS_AGGREGATOR_URL_MAINNET || 'https://walrus.globalstake.io/v1/blobs/by-object-id/';
+    } else {
+      // testnet, devnet, localnet 都使用 testnet 聚合器
+      this.walrusAggregatorUrl = process.env.REACT_APP_WALRUS_AGGREGATOR_URL_TESTNET || 'https://aggregator.walrus-testnet.walrus.space/v1/blobs/by-object-id/';
+    }
+    
+    console.log('Walrus 聚合器 URL:', this.walrusAggregatorUrl);
     
     // 初始化 SUI 客户端
     this.suiClient = new SuiClient({
@@ -203,40 +224,76 @@ export class WalrusService {
           address: address
         };
         
-        const { blobId } = await this.client.writeBlob({
-          blob: uint8Array,
-          deletable: true,
-          epochs: epochs,
-          signer: walrusSigner as any,
-          attributes: {
-            filename: file.name,
-            contentType: file.type,
-            uploadTime: new Date().toISOString()
-          }
-        });
-        
-        if (!blobId) {
-          throw new Error('文件上传失败：未获取到 blobId');
-        }
-        
-        console.log(`文件上传成功, Blob ID: ${blobId}`);
-        
-        // 获取blob URL - 使用自定义实现，因为当前版本可能没有这个方法
-        let url = '';
         try {
-          // 尝试直接调用，如果API支持的话
-          url = await (this.client as any).getBlobUrl(blobId);
-        } catch (e) {
-          // 如果API不支持，构造URL
-          const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
-          url = `https://${network}.walrus.app/blob/${blobId}`;
+          console.log('开始写入blob数据至Walrus存储网络...');
+          
+          /**
+           * WriteBlobOptions类型定义参照:
+           * https://sdk.mystenlabs.com/typedoc/types/_mysten_walrus.WriteBlobOptions.html
+           */
+          const writeBlobOptions: WriteBlobOptions = {
+            blob: uint8Array,
+            deletable: true,
+            epochs: epochs,
+            signer: walrusSigner as any,
+            attributes: {
+              filename: file.name,
+              contentType: file.type,
+              size: file.size.toString(),
+              lastModified: new Date(file.lastModified).toISOString(),
+              uploadTime: new Date().toISOString(),
+              origin: window.location.origin || 'unknown'
+            },
+            // 可选参数: 如果需要指定owner，可以在这里设置
+            // owner: address
+          };
+          
+          console.log('正在执行blob上传，参数:', JSON.stringify({
+            fileSize: file.size,
+            fileType: file.type,
+            epochs: epochs,
+            attributes: writeBlobOptions.attributes
+          }));
+          
+          const result = await this.client.writeBlob(writeBlobOptions);
+
+          if (!result || !result.blobId) {
+            throw new Error('文件上传失败：未获取到有效的blob信息');
+          }
+          
+          const { blobId, blobObject } = result;
+          
+          console.log(`文件上传成功, Blob ID: ${blobId}`, blobObject ? `对象ID: ${blobObject.id?.id}` : '');
+          
+          // 获取blob URL
+          let url = '';
+          try {
+            const objectId = blobObject?.id?.id;
+            // 使用改进的getBlobUrl方法，优先使用objectId
+            if (objectId) {
+              url = await this.getBlobUrl(objectId);
+              console.log(`成功获取Blob URL: ${url}`);
+            } else {
+              throw new Error('未获取到有效的对象ID');
+            }
+          } catch (e) {
+            console.warn('无法通过对象ID获取blob URL:', e);
+            // 备用URL构造方式
+            const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
+            url = `https://${network}.walrus.app/blob/${blobId}`;
+            console.log(`使用备用URL: ${url}`);
+          }
+          
+          if (!url) {
+            throw new Error('无法生成有效的Blob URL');
+          }
+          
+          return { blobId, url };
+        } catch (uploadError) {
+          console.error('Walrus blob上传错误:', uploadError);
+          const errorMessage = uploadError instanceof Error ? uploadError.message : '未知错误';
+          throw new Error(`Blob上传失败: ${errorMessage}`);
         }
-        
-        if (!url) {
-          throw new Error('获取文件URL失败');
-        }
-        
-        return { blobId, url };
       } catch (error) {
         if (error instanceof Error && error.name === 'RetryableWalrusClientError') {
           console.log('遇到可重试错误，重置客户端后重试...');
@@ -288,17 +345,23 @@ export class WalrusService {
   
   /**
    * 获取Blob的URL
-   * @param blobId Walrus中的Blob ID
+   * @param objectId Blob对象的ID
    * @returns Promise<string>
    */
-  async getBlobUrl(blobId: string): Promise<string> {
+  async getBlobUrl(objectId?: string): Promise<string> {
     try {
-      // 尝试直接调用，如果API支持的话
-      return await (this.client as any).getBlobUrl(blobId);
+      // 使用Object ID方式构建URL (推荐方式)
+      if (objectId) {
+        console.log(`使用对象ID ${objectId} 构建URL`);
+        return `${this.walrusAggregatorUrl}${objectId}`;
+      }
+      
+      // 如果没有objectId，返回错误信息
+      console.warn('未提供对象ID，无法构建URL');
+      throw new Error('缺少对象ID，无法生成Walrus URL');
     } catch (e) {
-      // 如果API不支持，构造URL
-      const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
-      return `https://${network}.walrus.app/blob/${blobId}`;
+      console.error('获取Blob URL时出错:', e);
+      throw new Error(`无法获取Blob URL: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 }
