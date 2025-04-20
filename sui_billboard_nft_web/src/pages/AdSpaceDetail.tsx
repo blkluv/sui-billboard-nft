@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Typography, Button, Spin, Card, Alert, Divider, Row, Col, List, Tag, Collapse, Space } from 'antd';
-import { ShoppingCartOutlined, InfoCircleOutlined, ReloadOutlined, ArrowLeftOutlined, ClockCircleOutlined, LinkOutlined } from '@ant-design/icons';
+import { ShoppingCartOutlined, InfoCircleOutlined, ReloadOutlined, ArrowLeftOutlined, ClockCircleOutlined, LinkOutlined, SwapOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { AdSpace, UserRole, BillboardNFT } from '../types';
 import { getAdSpaceDetails, formatSuiAmount, getNFTDetails } from '../utils/contract';
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
@@ -21,7 +21,8 @@ const AdSpaceDetailPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<UserRole>(UserRole.USER);
-  const [activeNft, setActiveNft] = useState<BillboardNFT | null>(null);
+  const [activeNfts, setActiveNfts] = useState<BillboardNFT[]>([]);
+  const [currentNftIndex, setCurrentNftIndex] = useState<number>(0);
   const [allNfts, setAllNfts] = useState<BillboardNFT[]>([]);
   const [loadingNfts, setLoadingNfts] = useState<boolean>(false);
   
@@ -106,24 +107,25 @@ const AdSpaceDetailPage: React.FC = () => {
       
       setAllNfts(validNfts);
       
-      // 找出活跃中的NFT
+      // 找出所有活跃中的NFT，而不是只找出一个
       const now = new Date();
-      const activeNfts = validNfts.filter(nft => {
+      const activeNftsFound = validNfts.filter(nft => {
         const leaseEnd = new Date(nft.leaseEnd);
         const leaseStart = new Date(nft.leaseStart);
         // 当前时间在租期之间且状态为活跃的
         return now >= leaseStart && now <= leaseEnd && nft.isActive;
       });
       
-      console.log('活跃NFT数量:', activeNfts.length);
+      console.log('活跃NFT数量:', activeNftsFound.length);
       
-      if (activeNfts.length > 0) {
-        // 如果有多个活跃NFT，选择租期最晚结束的
-        activeNfts.sort((a, b) => new Date(b.leaseEnd).getTime() - new Date(a.leaseEnd).getTime());
-        setActiveNft(activeNfts[0]);
-        console.log('设置活跃NFT:', activeNfts[0]);
+      if (activeNftsFound.length > 0) {
+        // 将所有活跃的NFT都保存起来
+        setActiveNfts(activeNftsFound);
+        // 重置轮播索引
+        setCurrentNftIndex(0);
+        console.log('设置活跃NFTs:', activeNftsFound);
       } else {
-        setActiveNft(null);
+        setActiveNfts([]);
       }
     } catch (err) {
       console.error('获取NFT信息失败:', err);
@@ -136,6 +138,32 @@ const AdSpaceDetailPage: React.FC = () => {
     fetchAdSpace();
   }, [id]);
   
+  // 轮播效果 - 每5秒切换一次活跃NFT
+  useEffect(() => {
+    // 如果有多个活跃NFT，启动轮播
+    if (activeNfts.length > 1) {
+      const intervalId = setInterval(() => {
+        setCurrentNftIndex(prevIndex => (prevIndex + 1) % activeNfts.length);
+      }, 5000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [activeNfts]);
+  
+  // 手动切换到下一个NFT
+  const handleNextNft = useCallback(() => {
+    if (activeNfts.length > 1) {
+      setCurrentNftIndex(prevIndex => (prevIndex + 1) % activeNfts.length);
+    }
+  }, [activeNfts]);
+  
+  // 手动切换到上一个NFT
+  const handlePrevNft = useCallback(() => {
+    if (activeNfts.length > 1) {
+      setCurrentNftIndex(prevIndex => (prevIndex - 1 + activeNfts.length) % activeNfts.length);
+    }
+  }, [activeNfts]);
+  
   const handleRefresh = () => {
     fetchAdSpace();
   };
@@ -143,6 +171,9 @@ const AdSpaceDetailPage: React.FC = () => {
   const handleBack = () => {
     navigate('/ad-spaces');
   };
+  
+  // 获取当前活跃的NFT
+  const currentActiveNft = activeNfts.length > 0 ? activeNfts[currentNftIndex] : null;
   
   // 判断是否应该显示购买按钮
   const shouldShowPurchase = () => {
@@ -258,13 +289,13 @@ const AdSpaceDetailPage: React.FC = () => {
               <div className="ad-space-detail-placeholder loading">
                 <Spin tip="加载NFT内容..." />
               </div>
-            ) : activeNft ? (
+            ) : currentActiveNft ? (
               <div className="active-nft-display">
                 <img 
-                  src={activeNft.contentUrl} 
-                  alt={activeNft.brandName}
+                  src={currentActiveNft.contentUrl} 
+                  alt={currentActiveNft.brandName}
                   onError={(e) => {
-                    console.error(`NFT图片加载失败:`, activeNft.contentUrl);
+                    console.error(`NFT图片加载失败:`, currentActiveNft.contentUrl);
                     // 图片加载失败时，显示占位符
                     (e.target as HTMLImageElement).src = `https://via.placeholder.com/${adSpace.dimension.width}x${adSpace.dimension.height}?text=广告内容`;
                   }}
@@ -272,6 +303,32 @@ const AdSpaceDetailPage: React.FC = () => {
                 <div className="active-badge animate-pulse">
                   <Tag color="green">活跃中</Tag>
                 </div>
+                
+                {activeNfts.length > 1 && (
+                  <div className="carousel-controls">
+                    <div className="carousel-info">
+                      <Tag color="blue">
+                        <SwapOutlined spin /> 轮播广告 {currentNftIndex + 1}/{activeNfts.length}
+                      </Tag>
+                    </div>
+                    <div className="carousel-nav">
+                      <Button 
+                        type="primary" 
+                        shape="circle" 
+                        icon={<LeftOutlined />} 
+                        onClick={handlePrevNft}
+                        className="nav-button prev"
+                      />
+                      <Button 
+                        type="primary" 
+                        shape="circle" 
+                        icon={<RightOutlined />} 
+                        onClick={handleNextNft}
+                        className="nav-button next"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="ad-space-detail-placeholder">

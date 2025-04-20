@@ -47,12 +47,10 @@ const ManagePage: React.FC = () => {
     let baseUrl = '';
     
     if (DEFAULT_NETWORK === 'mainnet') {
-      baseUrl = 'https://suivision.xyz';
-    } else if (DEFAULT_NETWORK === 'testnet') {
-      baseUrl = 'https://testnet.suivision.xyz';
+      baseUrl = NETWORKS.mainnet.explorerUrl;
     } else {
-      // 如果是其他网络，仍然使用配置的 explorerUrl
-      baseUrl = NETWORKS[DEFAULT_NETWORK].explorerUrl;
+      // 默认使用testnet
+      baseUrl = NETWORKS.testnet.explorerUrl;
     }
     
     if (type === 'address') {

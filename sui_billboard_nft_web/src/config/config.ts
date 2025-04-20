@@ -4,10 +4,8 @@ import { getFullnodeUrl } from '@mysten/sui/client';
  * 支持的网络类型定义
  * - mainnet: Sui主网
  * - testnet: Sui测试网
- * - devnet: Sui开发网
- * - localnet: 本地开发网络
  */
-export type NetworkName = 'mainnet' | 'testnet' | 'devnet' | 'localnet';
+export type NetworkName = 'mainnet' | 'testnet';
 
 /**
  * 网络配置接口
@@ -34,18 +32,6 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     fullNodeUrl: getFullnodeUrl('testnet'),
     faucetUrl: 'https://faucet.testnet.sui.io',
     explorerUrl: 'https://testnet.suivision.xyz'
-  },
-  devnet: {
-    name: '开发网',
-    fullNodeUrl: getFullnodeUrl('devnet'),
-    faucetUrl: 'https://faucet.devnet.sui.io',
-    explorerUrl: 'https://devnet.suivision.xyz'
-  },
-  localnet: {
-    name: '本地网络',
-    fullNodeUrl: 'http://localhost:9000',
-    faucetUrl: 'http://localhost:9123/gas',
-    explorerUrl: 'http://localhost:3000'
   }
 };
 

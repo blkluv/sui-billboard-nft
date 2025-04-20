@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Typography, Space, Tag, Spin, Tooltip } from 'antd';
-import { EnvironmentOutlined, ColumnWidthOutlined, DollarOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { EnvironmentOutlined, ColumnWidthOutlined, DollarOutlined, QuestionCircleOutlined, SwapOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { AdSpace, UserRole, BillboardNFT } from '../../types';
 import { useCurrentAccount } from '@mysten/dapp-kit';
@@ -18,7 +18,8 @@ interface AdSpaceCardProps {
 
 const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAddress }) => {
   const account = useCurrentAccount();
-  const [activeNft, setActiveNft] = useState<BillboardNFT | null>(null);
+  const [activeNfts, setActiveNfts] = useState<BillboardNFT[]>([]);
+  const [currentNftIndex, setCurrentNftIndex] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [userOwnedNfts, setUserOwnedNfts] = useState<BillboardNFT[]>([]);
   
@@ -34,6 +35,7 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
           const now = new Date();
           const userAddress = account ? account.address.toLowerCase() : null;
           const userNfts: BillboardNFT[] = [];
+          const activeNftsFound: BillboardNFT[] = [];
           
           // 遍历所有NFT
           for (const nftId of adSpace.nft_ids) {
@@ -61,7 +63,7 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
               }
               
               // 只有当前时间在租期内的NFT才被视为活跃
-              if (now >= leaseStart && now <= leaseEnd) {
+              if (now >= leaseStart && now <= leaseEnd && nftDetails.isActive) {
                 console.log(`找到活跃NFT[${nftId}]，将显示在卡片中, 内容URL:`, nftDetails.contentUrl);
                 
                 // 检查contentUrl是否有效
@@ -75,8 +77,8 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
                   img.src = nftDetails.contentUrl;
                 }
                 
-                setActiveNft(nftDetails);
-                break;
+                // 收集所有活跃的NFT，而不是只保留第一个
+                activeNftsFound.push(nftDetails);
               } else if (now < leaseStart) {
                 console.log(`NFT[${nftId}]尚未开始展示，租期开始时间:`, leaseStart.toLocaleString());
               } else {
@@ -90,6 +92,10 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
           // 保存用户拥有的NFT列表
           setUserOwnedNfts(userNfts);
           
+          // 保存所有活跃NFT
+          setActiveNfts(activeNftsFound);
+          setCurrentNftIndex(0); // 重置轮播索引
+          
         } catch (err) {
           console.error(`获取广告位[${adSpace.id}]的NFT失败:`, err);
         } finally {
@@ -102,6 +108,28 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
     
     fetchNftData();
   }, [adSpace.id, adSpace.nft_ids, account]);
+  
+  // 轮播效果 - 每5秒切换一次活跃NFT
+  useEffect(() => {
+    // 如果有多个活跃NFT，启动轮播
+    if (activeNfts.length > 1) {
+      const intervalId = setInterval(() => {
+        setCurrentNftIndex(prevIndex => (prevIndex + 1) % activeNfts.length);
+      }, 5000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [activeNfts]);
+  
+  // 手动切换轮播
+  const handleSwitchNft = useCallback(() => {
+    if (activeNfts.length > 1) {
+      setCurrentNftIndex(prevIndex => (prevIndex + 1) % activeNfts.length);
+    }
+  }, [activeNfts]);
+  
+  // 当前展示的NFT
+  const currentNft = activeNfts.length > 0 ? activeNfts[currentNftIndex] : null;
   
   // 判断是否应该显示购买按钮
   const shouldShowPurchase = useMemo(() => {
@@ -152,17 +180,24 @@ const AdSpaceCard: React.FC<AdSpaceCardProps> = ({ adSpace, userRole, creatorAdd
             <div className="loading-container">
               <Spin />
             </div>
-          ) : activeNft && activeNft.contentUrl ? (
+          ) : currentNft && currentNft.contentUrl ? (
             <div className="active-nft-cover">
               <img 
-                src={activeNft.contentUrl} 
-                alt={activeNft.brandName || '广告内容'} 
+                src={currentNft.contentUrl} 
+                alt={currentNft.brandName || '广告内容'} 
                 onError={(e) => {
-                  console.error(`NFT图片加载失败:`, activeNft.contentUrl);
+                  console.error(`NFT图片加载失败:`, currentNft.contentUrl);
                   // 图片加载失败时，显示占位符
                   (e.target as HTMLImageElement).src = `https://via.placeholder.com/${adSpace.dimension.width}x${adSpace.dimension.height}?text=广告内容`;
                 }}
               />
+              {activeNfts.length > 1 && (
+                <div className="carousel-controls" onClick={handleSwitchNft}>
+                  <Tag className="switch-tag" icon={<SwapOutlined />} color="blue">
+                    {currentNftIndex + 1}/{activeNfts.length}
+                  </Tag>
+                </div>
+              )}
               <Tag className="active-tag" color="green">活跃中</Tag>
             </div>
           ) : (
