@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Button, Upload, message, Radio, Spin, Form, Input, Progress, Tooltip } from 'antd';
-import { UploadOutlined, CheckCircleOutlined, InfoCircleOutlined, InboxOutlined } from '@ant-design/icons';
+import { Button, Upload, message, Radio, Spin, Form, Input, Progress, Tooltip, Card } from 'antd';
+import { UploadOutlined, CheckCircleOutlined, InfoCircleOutlined, InboxOutlined, FileOutlined, LinkOutlined } from '@ant-design/icons';
 import type { RcFile } from 'antd/lib/upload';
 import { walrusService, CustomSigner } from '../../utils/walrus';
 import './WalrusUpload.scss';
 import { useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
+import { DEFAULT_NETWORK } from '../../config/config';
+import { WALRUS_CONFIG } from '../../config/walrusConfig';
 
 const { Dragger } = Upload;
 
@@ -21,30 +23,23 @@ interface WalrusUploadProps {
  * Walrus文件上传组件
  * 支持外部URL和Walrus上传两种模式
  */
-const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDays = 30, onChange }) => {
+const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDays = WALRUS_CONFIG.DEFAULT_LEASE_DAYS, onChange }) => {
   const [uploading, setUploading] = useState(false);
   const [storageMode, setStorageMode] = useState<'walrus' | 'external'>('walrus');
   const [externalUrl, setExternalUrl] = useState('');
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadedUrl, setUploadedUrl] = useState('');
+  const [isImage, setIsImage] = useState(true);
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
-  // 从环境变量获取当前网络
-  const networkConfig = process.env.REACT_APP_DEFAULT_NETWORK || 'testnet';
+  // 从配置获取当前网络
+  const networkConfig = DEFAULT_NETWORK;
   
-  // 使用明确的类型赋值
-  let chainId: `${string}:${string}`;
-  if (networkConfig === 'testnet') {
-    chainId = 'sui:testnet';
-  } else if (networkConfig === 'mainnet') {
-    chainId = 'sui:mainnet';
-  } else if (networkConfig === 'devnet') {
-    chainId = 'sui:devnet';
-  } else {
-    // 默认使用testnet
-    chainId = 'sui:testnet';
-  }
+  // 根据网络配置构建链ID
+  let chainId: `${string}:${string}` = `sui:${networkConfig}`;
   
   console.log(`使用网络配置: ${chainId}`);
 
@@ -172,6 +167,24 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
     };
   };
 
+  // 检查URL是否为图片或视频
+  const checkMediaType = (url: string) => {
+    const lowerCaseUrl = url.toLowerCase();
+    // 检查图片扩展名
+    if (lowerCaseUrl.endsWith('.jpg') || lowerCaseUrl.endsWith('.jpeg') || 
+        lowerCaseUrl.endsWith('.png') || lowerCaseUrl.endsWith('.gif') || 
+        lowerCaseUrl.endsWith('.webp') || lowerCaseUrl.endsWith('.bmp')) {
+      return 'image';
+    }
+    // 检查视频扩展名
+    if (lowerCaseUrl.endsWith('.mp4') || lowerCaseUrl.endsWith('.webm') || 
+        lowerCaseUrl.endsWith('.ogg') || lowerCaseUrl.endsWith('.mov')) {
+      return 'video';
+    }
+    // 默认当作图片处理
+    return 'image';
+  };
+
   const handleUpload = async (file: RcFile) => {
     if (!account?.address) {
       message.error('请先连接钱包');
@@ -202,6 +215,12 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
         blobId: result.blobId,
         storageSource: 'walrus'
       });
+
+      // 设置上传成功状态和URL
+      setUploadSuccess(true);
+      setUploadedUrl(result.url);
+      // 根据文件扩展名判断是图片还是视频
+      setIsImage(checkMediaType(file.name) === 'image');
     } catch (error) {
       console.error('文件上传失败:', error);
       const err = error instanceof Error ? error : new Error(String(error));
@@ -234,8 +253,14 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
       });
       // 当URL输入后显示预览
       setPreviewVisible(true);
+      // 设置上传成功状态和URL
+      setUploadSuccess(true);
+      setUploadedUrl(url);
+      // 根据URL扩展名判断是图片还是视频
+      setIsImage(checkMediaType(url) === 'image');
     } else {
       setPreviewVisible(false);
+      setUploadSuccess(false);
     }
   };
 
@@ -257,14 +282,54 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
           url: externalUrl,
           storageSource: 'external'
         });
+        // 设置上传成功状态
+        setUploadSuccess(true);
+        setUploadedUrl(externalUrl);
+      } else {
+        setUploadSuccess(false);
       }
     } else {
       // 切换到Walrus模式时，清空外部URL
       setExternalUrl('');
       setPreviewVisible(false);
       setPreviewError(false);
+      // 如果之前没有上传过文件，重置上传成功状态
+      if (!uploadedUrl || uploadedUrl === externalUrl) {
+        setUploadSuccess(false);
+        setUploadedUrl('');
+      }
     }
   };
+
+  // 如果上传成功，直接显示媒体内容和URL
+  if (uploadSuccess && uploadedUrl) {
+    return (
+      <div className="walrus-upload-success">
+        <Card title="广告内容已上传成功" className="uploaded-content-card">
+          <div className="uploaded-content-preview">
+            {isImage ? (
+              <img 
+                src={uploadedUrl} 
+                alt="上传的图片" 
+                style={{ maxWidth: '100%', maxHeight: '300px', display: 'block', margin: '0 auto' }}
+                onError={handleImageError}
+              />
+            ) : (
+              <video 
+                src={uploadedUrl} 
+                controls
+                style={{ maxWidth: '100%', maxHeight: '300px', display: 'block', margin: '0 auto' }}
+              />
+            )}
+          </div>
+          <div className="content-url">
+            <p><LinkOutlined /> 内容URL：</p>
+            <a href={uploadedUrl} target="_blank" rel="noopener noreferrer">{uploadedUrl}</a>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="walrus-upload-container">

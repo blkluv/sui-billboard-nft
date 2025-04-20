@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Typography, Card, Divider, Select, Space, Spin, Row, Col, Tooltip, Slider, InputNumber, DatePicker, Switch } from 'antd';
+import { Form, Input, Button, Typography, Card, Divider, Select, Space, Spin, Row, Col, Tooltip, Slider, InputNumber, DatePicker, Switch, Alert } from 'antd';
 import { InfoCircleOutlined, ShoppingCartOutlined, QuestionCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { AdSpace, PurchaseAdSpaceParams } from '../../types';
 import { calculateLeasePrice, formatSuiAmount } from '../../utils/contract';
@@ -29,6 +29,7 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
   const [contentUrl, setContentUrl] = useState<string>("");
   const [useCustomStartTime, setUseCustomStartTime] = useState<boolean>(false);
   const [startTime, setStartTime] = useState<dayjs.Dayjs | null>(null);
+  const [contentUploaded, setContentUploaded] = useState<boolean>(false); // 添加上传成功状态
   
   // 添加上传参数状态
   const [contentParams, setContentParams] = useState<{
@@ -73,6 +74,9 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
     setContentParams(data);
     setContentUrl(data.url);
     form.setFieldsValue({ contentUrl: data.url });
+    
+    // 如果URL存在，则设置内容已上传状态
+    setContentUploaded(!!data.url);
   };
   
   const handleSubmit = (values: any) => {
@@ -96,8 +100,8 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
       storageSource: contentParams.storageSource
     };
     
-    // 如果使用自定义开始时间，添加startTime字段
-    if (useCustomStartTime && startTime) {
+    // 如果使用自定义开始时间且允许自定义，添加startTime字段
+    if (useCustomStartTime && startTime && !contentUploaded) {
       params.startTime = Math.floor(startTime.valueOf() / 1000); // 转换为Unix时间戳（秒）
       console.log('使用自定义开始时间:', new Date(params.startTime * 1000).toLocaleString(), '时间戳:', params.startTime);
     } else {
@@ -114,6 +118,17 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
       storageSource: 'external'
     });
   };
+  
+  // 当内容上传成功后，更新表单字段的禁用状态
+  useEffect(() => {
+    if (contentUploaded) {
+      // 设置租赁天数为只读
+      form.setFieldValue('leaseDays', leaseDays);
+      // 关闭自定义开始时间
+      setUseCustomStartTime(false);
+      form.setFieldValue('useCustomStartTime', false);
+    }
+  }, [contentUploaded, leaseDays, form]);
   
   return (
     <Card className="ad-space-form">
@@ -169,7 +184,7 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
               name="leaseDays"
               label="租赁天数"
               rules={[{ required: true, message: '请输入租赁天数' }]}
-              extra="请输入1-365天的整数，租期越长折扣越多"
+              extra={contentUploaded ? "上传成功后租期不可修改" : "请输入1-365天的整数，租期越长折扣越多"}
             >
               <InputNumber
                 min={1}
@@ -185,6 +200,7 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
                 }}
                 addonAfter="天"
                 style={{ width: '100%' }}
+                disabled={contentUploaded}
               />
             </Form.Item>
           </Col>
@@ -204,10 +220,11 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
                 checkedChildren="启用"
                 unCheckedChildren="默认"
                 onChange={(checked) => setUseCustomStartTime(checked)}
+                disabled={contentUploaded}
               />
             </Form.Item>
             <Text type="secondary" style={{ display: 'block', marginTop: '-15px', marginBottom: '10px' }}>
-              默认使用交易确认时的当前时间
+              {contentUploaded ? "上传成功后不可修改，使用系统默认时间" : "默认使用交易确认时的当前时间"}
             </Text>
           </Col>
           <Col span={12}>
@@ -228,9 +245,9 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
             >
               <DatePicker
                 showTime
-                disabled={!useCustomStartTime}
+                disabled={!useCustomStartTime || contentUploaded}
                 style={{ width: '100%' }}
-                placeholder="选择开始时间"
+                placeholder={contentUploaded ? "使用系统默认时间" : "选择开始时间"}
                 onChange={(date) => setStartTime(date)}
                 disabledDate={(current) => {
                   // 不能选择过去的日期
@@ -241,6 +258,16 @@ const AdSpaceForm: React.FC<AdSpaceFormProps> = ({
             </Form.Item>
           </Col>
         </Row>
+        
+        {contentUploaded && (
+          <Alert
+            message="自定义开始时间和广告开始时间已根据系统设置自动配置"
+            description="为确保广告展示的一致性，上传成功后系统将自动配置广告的开始时间。"
+            type="info"
+            showIcon
+            style={{ marginBottom: '16px' }}
+          />
+        )}
         
         <Row gutter={16}>
           <Col span={24}>

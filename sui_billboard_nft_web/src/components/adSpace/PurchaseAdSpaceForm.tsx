@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, InputNumber, message, Space, Tooltip } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Form, Input, Button, InputNumber, message, Space, Tooltip, Alert } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { SuiClient } from '@mysten/sui/client';
 import { useCurrentAccount } from '@mysten/dapp-kit';
@@ -29,6 +29,7 @@ const PurchaseAdSpaceForm: React.FC<PurchaseAdSpaceFormProps> = ({
     storageSource?: string;
   }>({ url: '' });
   const [leaseDays, setLeaseDays] = useState(365);
+  const [contentUploaded, setContentUploaded] = useState(false);
   
   const account = useCurrentAccount();
   const transaction = useTransaction(suiClient, {
@@ -42,11 +43,13 @@ const PurchaseAdSpaceForm: React.FC<PurchaseAdSpaceFormProps> = ({
   // 处理内容上传成功
   const handleContentUploadSuccess = (url: string, blobId?: string, storageSource?: string) => {
     setContentParams({ url, blobId, storageSource });
+    setContentUploaded(true);
   };
   
   // 处理内容参数变更
   const handleContentParamsChange = (data: { url: string; blobId?: string; storageSource: string }) => {
     setContentParams(data);
+    setContentUploaded(!!data.url);
   };
   
   // 处理租期变更
@@ -82,6 +85,13 @@ const PurchaseAdSpaceForm: React.FC<PurchaseAdSpaceFormProps> = ({
     // 执行交易
     await transaction.executeTransaction(tx);
   };
+  
+  // 当内容上传成功后，更新表单字段的禁用状态
+  useEffect(() => {
+    if (contentUploaded) {
+      form.setFieldValue('leaseDays', leaseDays);
+    }
+  }, [contentUploaded, leaseDays, form]);
   
   return (
     <Form
@@ -122,7 +132,11 @@ const PurchaseAdSpaceForm: React.FC<PurchaseAdSpaceFormProps> = ({
         }
         name="leaseDays"
         rules={[{ required: true, message: '请输入租期天数' }]}
-        extra="请输入1-365天的整数，租期越长折扣越多"
+        extra={
+          contentUploaded ? 
+          "上传成功后租期不可修改" :
+          "请输入1-365天的整数，租期越长折扣越多"
+        }
       >
         <InputNumber
           min={1}
@@ -131,8 +145,19 @@ const PurchaseAdSpaceForm: React.FC<PurchaseAdSpaceFormProps> = ({
           style={{ width: '100%' }}
           onChange={handleLeaseDaysChange}
           addonAfter="天"
+          disabled={contentUploaded}
         />
       </Form.Item>
+      
+      {contentUploaded && (
+        <Alert
+          message="自定义开始时间和广告开始时间已根据系统设置自动配置"
+          description="为确保广告展示的一致性，上传成功后系统将自动配置广告的开始时间。"
+          type="info"
+          showIcon
+          style={{ marginBottom: '16px' }}
+        />
+      )}
       
       <Form.Item
         label="广告内容"

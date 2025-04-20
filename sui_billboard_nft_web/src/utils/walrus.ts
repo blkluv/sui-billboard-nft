@@ -2,6 +2,7 @@ import { WalrusClient } from '@mysten/walrus';
 import { getFullnodeUrl, SuiClient } from '@mysten/sui/client';
 import type { WriteBlobOptions } from '@mysten/walrus';
 import type { Signer } from '@mysten/sui/cryptography';
+import { WALRUS_CONFIG, getWalrusAggregatorUrl } from '../config/walrusConfig';
 
 /**
  * 自定义签名器接口，兼容性更强
@@ -18,23 +19,17 @@ export interface CustomSigner {
 export class WalrusService {
   private client!: WalrusClient;
   private suiClient!: SuiClient;
-  private readonly MAX_RETRIES = 3;
-  private readonly RETRY_DELAY = 1000; // 1秒
+  private readonly MAX_RETRIES = WALRUS_CONFIG.MAX_RETRIES;
+  private readonly RETRY_DELAY = WALRUS_CONFIG.RETRY_DELAY;
   private walrusAggregatorUrl: string;
   
   constructor() {
-    // 使用类型断言确保网络类型正确
-    const network = (process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet') as 'testnet' | 'mainnet' | 'devnet' | 'localnet';
+    // 从配置获取网络类型
+    const network = WALRUS_CONFIG.ENVIRONMENT;
     console.log('初始化 Walrus 服务，网络环境:', network);
     
-    // 根据环境获取正确的Walrus聚合器URL
-    if (network === 'mainnet') {
-      this.walrusAggregatorUrl = process.env.REACT_APP_WALRUS_AGGREGATOR_URL_MAINNET || 'https://walrus.globalstake.io/v1/blobs/by-object-id/';
-    } else {
-      // testnet, devnet, localnet 都使用 testnet 聚合器
-      this.walrusAggregatorUrl = process.env.REACT_APP_WALRUS_AGGREGATOR_URL_TESTNET || 'https://aggregator.walrus-testnet.walrus.space/v1/blobs/by-object-id/';
-    }
-    
+    // 从配置获取聚合器URL
+    this.walrusAggregatorUrl = getWalrusAggregatorUrl(network);
     console.log('Walrus 聚合器 URL:', this.walrusAggregatorUrl);
     
     // 初始化 SUI 客户端
@@ -45,14 +40,14 @@ export class WalrusService {
     try {
       // 初始化 Walrus 客户端
       this.client = new WalrusClient({
-        // 只使用 testnet 或 mainnet，将 devnet 和 localnet 都映射到 testnet
-        network: (network === 'testnet' || network === 'mainnet') ? network : 'testnet',
+        // 网络环境配置
+        network: network,
         // 由于类型不兼容问题，使用类型断言
         suiClient: this.suiClient as any,
-        // 使用 CDN 地址加载 WASM
-        wasmUrl: 'https://unpkg.com/@mysten/walrus-wasm@latest/web/walrus_wasm_bg.wasm',
+        // 使用配置的WASM URL
+        wasmUrl: WALRUS_CONFIG.WASM_URL,
         storageNodeClientOptions: {
-          timeout: 60_000,
+          timeout: WALRUS_CONFIG.REQUEST_TIMEOUT,
           // 调整fetch参数类型
           fetch: ((url: RequestInfo, options?: RequestInit) => 
             this.fetchWithRetry(url.toString(), options || {}, this.MAX_RETRIES)) as any
@@ -79,7 +74,7 @@ export class WalrusService {
     try {
       const response = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(60_000) // 60秒超时
+        signal: AbortSignal.timeout(WALRUS_CONFIG.REQUEST_TIMEOUT)
       });
       
       if (!response.ok) {
@@ -177,10 +172,6 @@ export class WalrusService {
           }
         } catch (e) {
           console.warn('无法通过对象ID获取blob URL:', e);
-          // 备用URL构造方式
-          const network = process.env.REACT_APP_WALRUS_ENVIRONMENT || 'testnet';
-          url = `https://${network}.walrus.app/blob/${blobId}`;
-          console.log(`使用备用URL: ${url}`);
         }
         
         if (!url) {
