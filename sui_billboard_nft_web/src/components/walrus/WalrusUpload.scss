@@ -1,176 +1,121 @@
 .walrus-upload-container {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   
   .storage-selector {
-    display: flex;
-    align-items: center;
     margin-bottom: 16px;
   }
   
-  .walrus-upload-section {
-    .upload-container {
-      .selected-file {
-        padding: 10px;
-        border: 1px dashed #d9d9d9;
-        border-radius: 4px;
-        margin-bottom: 16px;
-        
-        .file-info {
-          margin-bottom: 10px;
-        }
-        
-        .file-actions {
-          display: flex;
-          margin-top: 8px;
-        }
-      }
-      
-      .upload-progress {
-        padding: 10px;
-        border: 1px solid #f0f0f0;
-        border-radius: 4px;
-        margin-bottom: 16px;
-      }
-      
-      .upload-success {
-        padding: 10px;
-        border: 1px solid #b7eb8f;
-        border-radius: 4px;
-        background-color: #f6ffed;
-        margin-bottom: 16px;
-        
-        .success-header {
-          display: flex;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-        
-        .blob-info, .storage-duration {
-          margin-bottom: 8px;
-          font-size: 12px;
-          
-          code {
-            background-color: #f5f5f5;
-            padding: 2px 4px;
-            border-radius: 2px;
-          }
-        }
-        
-        .preview-container {
-          margin-top: 12px;
-          
-          img {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: 4px;
-          }
-        }
-      }
-    }
+  .ant-upload-drag {
+    border: 2px dashed #d9d9d9;
     
-    .upload-note {
-      font-size: 12px;
-      color: #8c8c8c;
-      margin-top: 8px;
+    &:hover {
+      border-color: #1890ff;
     }
   }
-  
-  .preview-section {
-    margin-top: 16px;
-    
-    .preview-title {
-      font-size: 12px;
-      color: #8c8c8c;
-      margin-bottom: 8px;
-    }
-    
-    .preview-image {
-      max-width: 100%;
-      max-height: 200px;
-      border-radius: 4px;
-    }
-  }
-  
-  // 外部URL预览样式
-  .external-url-preview {
-    margin-top: 16px;
-    
-    img {
-      transition: transform 0.3s ease;
-      border-radius: 4px;
-      
-      &:hover {
-        transform: scale(1.05);
-      }
-    }
-    
-    .preview-error {
-      padding: 20px;
-      text-align: center;
-      color: #ff4d4f;
-      border: 1px dashed #ffa39e;
-      border-radius: 4px;
-      background-color: #fff1f0;
-    }
-  }
-  
+
   .upload-note {
     font-size: 12px;
-    color: #8c8c8c;
+    color: #888;
     margin-top: 8px;
-    margin-bottom: 8px;
+  }
+  
+  .upload-requirements {
+    margin-top: 12px;
+    padding: 8px 16px;
+    border-top: 1px dashed #e8e8e8;
+    text-align: center;
+    
+    p {
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: #888;
+    }
+  }
+  
+  .external-url-preview {
+    margin-top: 16px;
+  }
+  
+  .preview-error {
+    color: #ff4d4f;
+    padding: 12px;
+    border: 1px dashed #ff4d4f;
+    border-radius: 4px;
+    background-color: #fff1f0;
+  }
+  
+  // 上传进度容器样式
+  .upload-progress-container {
+    margin: 16px 0;
+    
+    .ant-card {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .upload-progress-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      
+      h3 {
+        margin: 0;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+    }
+    
+    .upload-stage-info {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #333;
+      
+      .upload-stage-hint {
+        font-size: 13px;
+        color: #fa8c16;
+        background-color: #fff7e6;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin-top: 8px;
+      }
+    }
   }
 }
 
-// 上传成功后的样式
 .walrus-upload-success {
   .uploaded-content-card {
-    margin-bottom: 16px;
-    border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     
     .ant-card-head {
       background-color: #f6ffed;
-      border-bottom-color: #b7eb8f;
+      border-bottom: 1px solid #b7eb8f;
+      color: #52c41a;
     }
     
     .uploaded-content-preview {
-      padding: 16px;
-      text-align: center;
-      background-color: #fafafa;
-      border-radius: 4px;
       margin-bottom: 16px;
-      
-      img, video {
-        border-radius: 4px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease;
-        
-        &:hover {
-          transform: scale(1.02);
-        }
-      }
+      display: flex;
+      justify-content: center;
+      background-color: #fafafa;
+      padding: 16px;
+      border-radius: 4px;
     }
     
     .content-url {
-      padding: 8px 12px;
-      background-color: #f5f5f5;
-      border-radius: 4px;
-      word-break: break-all;
+      border-top: 1px dashed #d9d9d9;
+      padding-top: 12px;
+      margin-top: 12px;
       
       p {
-        font-weight: 500;
         margin-bottom: 4px;
+        color: #555;
+        font-weight: 500;
       }
       
       a {
-        color: #1890ff;
-        transition: color 0.3s ease;
-        
-        &:hover {
-          color: #40a9ff;
-          text-decoration: underline;
-        }
+        word-break: break-all;
       }
     }
   }

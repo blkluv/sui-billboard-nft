@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Upload, message, Radio, Spin, Form, Input, Progress, Tooltip, Card } from 'antd';
-import { UploadOutlined, CheckCircleOutlined, InfoCircleOutlined, InboxOutlined, FileOutlined, LinkOutlined } from '@ant-design/icons';
+import { UploadOutlined, CheckCircleOutlined, InfoCircleOutlined, InboxOutlined, FileOutlined, LinkOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { RcFile } from 'antd/lib/upload';
 import { walrusService, CustomSigner } from '../../utils/walrus';
 import './WalrusUpload.scss';
@@ -12,12 +12,33 @@ import { WALRUS_CONFIG } from '../../config/walrusConfig';
 
 const { Dragger } = Upload;
 
+// 允许的文件类型
+const ALLOWED_FILE_TYPES = [
+  // 图片
+  'image/jpeg', 
+  'image/png', 
+  'image/gif', 
+  'image/webp', 
+  'image/bmp',
+  // 视频
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'video/quicktime' // .mov 文件
+];
+
+// 文件大小限制 (10MB)
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 interface WalrusUploadProps {
   onSuccess?: (url: string, blobId?: string, storageSource?: string) => void;
   onError?: (error: Error) => void;
   leaseDays?: number;
   onChange?: (data: { url: string; blobId?: string; storageSource: string }) => void;
 }
+
+// 上传阶段枚举
+type UploadStage = 'preparing' | 'signing' | 'uploading' | 'finalizing' | 'completed' | 'idle';
 
 /**
  * Walrus文件上传组件
@@ -32,6 +53,13 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [isImage, setIsImage] = useState(true);
+  // 上传进度状态
+  const [uploadProgress, setUploadProgress] = useState(0);
+  // 上传阶段状态
+  const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
+  // 上传文件名称
+  const [uploadingFileName, setUploadingFileName] = useState('');
+  
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
@@ -53,6 +81,10 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
       // 签名交易方法
       signTransaction: async (tx: any) => {
         console.log('准备签名交易，交易对象:', tx);
+        
+        // 更新上传阶段为签名中
+        setUploadStage('signing');
+        setUploadProgress(30);
         
         // 确保交易对象包含 sender 信息
         if (tx && typeof tx === 'object' && 'setSender' in tx && typeof tx.setSender === 'function') {
@@ -93,6 +125,10 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
                 }
               );
             });
+            
+            // 签名完成后更新进度
+            setUploadProgress(50);
+            setUploadStage('uploading');
             
             if (!response) {
               throw new Error('交易签名未返回结果');
@@ -146,6 +182,10 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
             );
           });
           
+          // 签名完成后更新进度
+          setUploadProgress(50);
+          setUploadStage('uploading');
+          
           if (!response) {
             throw new Error('交易签名未返回结果');
           }
@@ -191,12 +231,33 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
       return false;
     }
 
+    // 检查文件类型
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      message.error('不支持的文件类型，请上传PNG、JPG、GIF、WEBP图片或MP4、WEBM、MOV视频');
+      return false;
+    }
+
+    // 检查文件大小
+    if (file.size > MAX_FILE_SIZE) {
+      message.error(`文件大小超过限制，最大允许10MB，当前文件大小${(file.size / 1024 / 1024).toFixed(2)}MB`);
+      return false;
+    }
+
     setUploading(true);
+    // 重置上传状态并设置为准备中
+    setUploadProgress(10);
+    setUploadStage('preparing');
+    setUploadingFileName(file.name);
+    
     try {
       const duration = leaseDays * 24 * 60 * 60; // 转换为秒
       
       // 创建Signer对象
       const signer = createSigner();
+      
+      // 在uploadFile调用前更新进度为上传中
+      setUploadProgress(60);
+      setUploadStage('uploading');
       
       // 使用新的接口调用uploadFile
       const result = await walrusService.uploadFile(
@@ -206,28 +267,50 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
         signer
       );
 
-      message.success('文件上传成功');
-      onSuccess?.(result.url, result.blobId, 'walrus');
+      // 上传完成，更新进度为完成阶段
+      setUploadProgress(90);
+      setUploadStage('finalizing');
       
-      // 通知父组件内容变更
-      onChange?.({
-        url: result.url,
-        blobId: result.blobId,
-        storageSource: 'walrus'
-      });
+      setTimeout(() => {
+        // 最终完成
+        setUploadProgress(100);
+        setUploadStage('completed');
+        
+        // 设置上传成功状态和URL
+        setUploadSuccess(true);
+        setUploadedUrl(result.url);
+        // 根据文件扩展名判断是图片还是视频
+        setIsImage(checkMediaType(file.name) === 'image');
+        
+        message.success('文件上传成功');
+        onSuccess?.(result.url, result.blobId, 'walrus');
+        
+        // 通知父组件内容变更
+        onChange?.({
+          url: result.url,
+          blobId: result.blobId,
+          storageSource: 'walrus'
+        });
+      }, 500);
 
-      // 设置上传成功状态和URL
-      setUploadSuccess(true);
-      setUploadedUrl(result.url);
-      // 根据文件扩展名判断是图片还是视频
-      setIsImage(checkMediaType(file.name) === 'image');
     } catch (error) {
       console.error('文件上传失败:', error);
       const err = error instanceof Error ? error : new Error(String(error));
       message.error('文件上传失败: ' + err.message);
       onError?.(err);
+      // 重置上传状态
+      setUploadStage('idle');
+      setUploadProgress(0);
     } finally {
-      setUploading(false);
+      // 不要在这里马上设置uploading为false，而是在setUploadStage('completed')后延迟设置
+      if (uploadStage !== 'completed') {
+        setUploading(false);
+      } else {
+        // 给用户一个短暂的时间看到100%完成状态
+        setTimeout(() => {
+          setUploading(false);
+        }, 1000);
+      }
     }
     return false;
   };
@@ -300,6 +383,24 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
       }
     }
   };
+  
+  // 获取上传阶段的描述文本
+  const getUploadStageText = () => {
+    switch (uploadStage) {
+      case 'preparing':
+        return '准备上传文件...';
+      case 'signing':
+        return '等待钱包签名交易...';
+      case 'uploading':
+        return '正在上传文件到Walrus存储网络...';
+      case 'finalizing':
+        return '正在完成上传，生成访问链接...';
+      case 'completed':
+        return '上传完成！';
+      default:
+        return '';
+    }
+  };
 
   // 如果上传成功，直接显示媒体内容和URL
   if (uploadSuccess && uploadedUrl) {
@@ -341,29 +442,60 @@ const WalrusUpload: React.FC<WalrusUploadProps> = ({ onSuccess, onError, leaseDa
       </div>
       
       {storageMode === 'walrus' ? (
-        <Dragger {...uploadProps}>
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">
-            {account?.address
-              ? '点击或拖拽文件到此区域上传'
-              : '请先连接钱包'}
-          </p>
-          <p className="ant-upload-hint">
-            支持单个文件上传，文件将存储在 Walrus 上
-          </p>
-        </Dragger>
+        <>
+          {uploading ? (
+            <div className="upload-progress-container">
+              <Card>
+                <div className="upload-progress-header">
+                  <LoadingOutlined style={{ fontSize: 24, color: '#1890ff', marginRight: 12 }} />
+                  <h3>正在上传: {uploadingFileName}</h3>
+                </div>
+                <Progress 
+                  percent={uploadProgress} 
+                  status={uploadProgress < 100 ? "active" : "success"} 
+                  strokeColor={{
+                    '0%': '#108ee9',
+                    '100%': '#87d068',
+                  }}
+                />
+                <div className="upload-stage-info">
+                  <p>{getUploadStageText()}</p>
+                  {uploadStage === 'signing' && (
+                    <p className="upload-stage-hint">请在钱包中确认交易，请勿关闭此页面</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          ) : (
+            <Dragger {...uploadProps}>
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">
+                {account?.address
+                  ? '点击或拖拽文件到此区域上传'
+                  : '请先连接钱包'}
+              </p>
+              <p className="ant-upload-hint">
+                支持单个文件上传，文件将存储在 Walrus 上
+              </p>
+              <div className="upload-requirements">
+                <p>支持的格式：PNG、JPG、GIF、WEBP图片或MP4、WEBM、MOV视频</p>
+                <p>最大文件大小：10MB</p>
+              </div>
+            </Dragger>
+          )}
+        </>
       ) : (
         <div>
           <Form.Item>
             <Input 
-              placeholder="请输入完整的外部图片URL，包括http://或https://" 
+              placeholder="请输入完整的外部媒体URL，包括http://或https://" 
               value={externalUrl} 
               onChange={handleExternalUrlChange}
             />
             <div className="upload-note">
-              请确保您提供的图片URL是公开可访问的，且文件格式为常见图片格式（如JPG、PNG、GIF等）
+              请确保您提供的URL是公开可访问的，且文件格式为支持的图片或视频格式
             </div>
           </Form.Item>
           
