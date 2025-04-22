@@ -26,7 +26,11 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "start:dev": "cross-env REACT_APP_ENV=development react-scripts start",
+    "start:prod": "cross-env REACT_APP_ENV=production react-scripts start",
     "build": "react-scripts build",
+    "build:dev": "cross-env REACT_APP_ENV=development react-scripts build",
+    "build:prod": "cross-env REACT_APP_ENV=production react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -53,6 +57,7 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@types/react-router-dom": "^5.3.3",
+    "cross-env": "^7.0.3",
     "typescript": "^4.9.5"
   }
 }

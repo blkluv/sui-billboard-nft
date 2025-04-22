@@ -39,34 +39,84 @@ npm install
 ### 开发
 
 ```bash
-# 启动开发服务器
+# 启动开发服务器（开发环境）
 npm start
+# 或
+npm run start:dev
+
+# 启动开发服务器（生产环境模拟）
+npm run start:prod
 ```
 
 这将在 [http://localhost:3000](http://localhost:3000) 启动开发服务器。
 
 ### 环境变量配置
 
-项目支持通过环境变量配置关键参数，您可以在项目根目录创建 `.env` 文件来设置这些变量：
+项目支持通过环境变量配置关键参数。项目使用以下文件区分不同环境：
+
+- `.env`：默认环境变量，作为基础配置
+- `.env.development`：开发环境配置
+- `.env.production`：生产环境配置
+
+您可以在这些文件中设置以下变量：
 
 ```
 # 合约配置
 REACT_APP_CONTRACT_PACKAGE_ID=0x... # 您的合约包ID
 REACT_APP_CONTRACT_MODULE_NAME=billboard_nft # 合约模块名
 REACT_APP_FACTORY_OBJECT_ID=0x... # 工厂对象ID
+REACT_APP_NFT_DISPLAY_CONFIG_ID=0x... # NFT显示配置ID
+REACT_APP_CLOCK_ID=0x6 # 时钟对象ID
 
-# 可选：默认网络配置
-REACT_APP_DEFAULT_NETWORK=testnet # 可选值: mainnet, testnet, devnet, localnet
+# 网络配置
+REACT_APP_DEFAULT_NETWORK=testnet # 可选值: mainnet, testnet
+
+# 开发配置
+REACT_APP_USE_MOCK_DATA=false # 是否使用模拟数据
+REACT_APP_ENV=development # 环境类型：development 或 production
+
+# API配置
+REACT_APP_API_TIMEOUT=30000 # API超时时间（毫秒）
+
+# Walrus配置
+REACT_APP_WALRUS_ENVIRONMENT=testnet # Walrus环境：testnet 或 mainnet
+REACT_APP_WALRUS_AGGREGATOR_URL_MAINNET=https://walrus.globalstake.io/v1/blobs/by-object-id/ # 主网Walrus服务
+REACT_APP_WALRUS_AGGREGATOR_URL_TESTNET=https://aggregator.walrus-testnet.walrus.space/v1/blobs/by-object-id/ # 测试网Walrus服务
 ```
 
 ### 构建
 
 ```bash
+# 为开发环境构建应用
+npm run build:dev
+
 # 为生产环境构建应用
+npm run build:prod
+# 或
 npm run build
 ```
 
 构建完成后，所有文件将被生成到 `build` 目录，可以部署到任意静态网站托管服务。
+
+## 环境配置工具
+
+项目提供了环境配置工具，可以在代码中轻松访问环境变量：
+
+```typescript
+import env from '../utils/env';
+
+// 检查当前环境
+if (env.isDevelopment()) {
+  // 开发环境特定逻辑
+}
+
+// 获取当前网络
+const network = env.getNetwork(); // 'testnet' 或 'mainnet'
+
+// 获取其他配置
+const contractId = env.getContractPackageId();
+const walrusUrl = env.getWalrusAggregatorUrl();
+```
 
 ## 使用方法
 
@@ -159,6 +209,7 @@ src/
   ├── utils/             # 工具函数
   │   ├── auth.ts        # 权限验证
   │   ├── contract.ts    # 合约交互
+  │   ├── env.ts         # 环境配置工具
   │   └── format.ts      # 数据格式化
   └── assets/            # 静态资源
 ```
